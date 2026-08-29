@@ -73,7 +73,10 @@ jobs:
           export ASPNETCORE_URLS=http://127.0.0.1:5099
           export App__DataPath="$RUNNER_TEMP/smoke-data"
           export Weather__Enabled=false
-          dotnet "$RUNNER_TEMP/publish/LifeManager.Api.dll" > "$RUNNER_TEMP/life-manager-smoke.log" 2>&1 &
+          (
+            cd "$RUNNER_TEMP/publish"
+            dotnet LifeManager.Api.dll
+          ) > "$RUNNER_TEMP/life-manager-smoke.log" 2>&1 &
           APP_PID=$!
           cleanup() { kill "$APP_PID" >/dev/null 2>&1 || true; }
           trap cleanup EXIT

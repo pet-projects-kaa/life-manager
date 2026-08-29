@@ -112,7 +112,8 @@ public sealed class AdviceFeedback
 
 public sealed record AdviceCard(string Key, string Kind, string Title, string Text, string Label, int Priority, string? Action = null);
 public sealed record BenefitCard(string Key, string Kind, string Title, string Text, decimal? Amount, DateTimeOffset? DueAt, string? SourceUrl, int Priority);
-public sealed record WeatherSnapshot(bool Available, string City, double? Temperature, double? FeelsLike, int? PrecipitationProbability, double? WindSpeed, string Summary, string OutfitAdvice);
-public sealed record HoroscopeCard(string Sign, string Text, string Disclaimer);
-public sealed record LegalSource(string Title, string Url);
+public sealed record WeatherSnapshot(bool Available, string City, double? Temperature, double? FeelsLike, int? PrecipitationProbability, double? WindSpeed, string Summary, string OutfitAdvice, double? MaxTemperature, double? MinTemperature, string? Sunrise, string? Sunset, string Source);
+public sealed record HoroscopeCard(string Sign, string Text, string Disclaimer, string Theme, string ThemeTitle);
+public sealed record LegalSource(string Title, string Url, string? Note = null);
+public sealed record TodayFact(int? Year, string Text, string SourceUrl, string SourceTitle);
 public sealed record LegalAdvice(string Category, string Title, string Summary, IReadOnlyList<string> Steps, IReadOnlyList<LegalSource> Sources, string Disclaimer);

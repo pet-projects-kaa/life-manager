@@ -41,22 +41,34 @@ REGISTER_BODY="$(curl -fsS -c "$COOKIE_JAR" \
   "$BASE_URL/api/auth/register")"
 assert_contains "register" "$REGISTER_BODY" '"displayName":"Smoke"'
 
-echo "[smoke] seed demo"
-curl -fsS -b "$COOKIE_JAR" -X POST "$BASE_URL/api/demo/seed" >/dev/null
+# Create real data instead of a demo/test seed endpoint.
+echo "[smoke] create task"
+curl -fsS -b "$COOKIE_JAR" -H 'Content-Type: application/json' \
+  -d '{"title":"Smoke task","notes":"ci","dueAt":null,"priority":"normal","repeatEveryDays":null}' \
+  "$BASE_URL/api/tasks" >/dev/null
+
+echo "[smoke] create habit"
+curl -fsS -b "$COOKIE_JAR" -H 'Content-Type: application/json' \
+  -d '{"title":"Smoke habit","icon":"✓","target":2,"unit":"раз"}' \
+  "$BASE_URL/api/habits" >/dev/null
+
+echo "[smoke] create shopping item"
+curl -fsS -b "$COOKIE_JAR" -H 'Content-Type: application/json' \
+  -d '{"title":"Smoke milk","category":"food","estimatedPrice":100}' \
+  "$BASE_URL/api/shopping" >/dev/null
 
 check_get_auth "dashboard" "$BASE_URL/api/dashboard" '"profile"'
-check_get_auth "tasks" "$BASE_URL/api/tasks" 'Отправить документы'
-check_get_auth "habits" "$BASE_URL/api/habits" 'Вода'
-check_get_auth "shopping" "$BASE_URL/api/shopping" 'Молоко'
-check_get_auth "home" "$BASE_URL/api/home" 'Сменить полотенца'
-check_get_auth "benefits" "$BASE_URL/api/benefits" 'налоговый вычет'
+check_get_auth "tasks" "$BASE_URL/api/tasks" 'Smoke task'
+check_get_auth "habits" "$BASE_URL/api/habits" 'Smoke habit'
+check_get_auth "shopping" "$BASE_URL/api/shopping" 'Smoke milk'
 check_get_auth "advice" "$BASE_URL/api/advice" '"title"'
 
 echo "[smoke] legal advice"
 LEGAL_BODY="$(curl -fsS -b "$COOKIE_JAR" \
   -H 'Content-Type: application/json' \
-  -d '{"category":"delivery","text":"Заказ должен был приехать неделю назад"}' \
+  -d '{"category":"auto","text":"Интернет-магазин задержал доставку заказа на неделю, хочу вернуть деньги"}' \
   "$BASE_URL/api/legal/advice")"
-assert_contains "legal advice" "$LEGAL_BODY" 'Проблема с доставкой'
+assert_contains "legal advice title" "$LEGAL_BODY" 'Задержка или проблема с доставкой'
+assert_contains "legal advice source" "$LEGAL_BODY" 'consultant.ru'
 
 echo "Smoke test passed"

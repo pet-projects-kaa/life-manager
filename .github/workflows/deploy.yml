@@ -73,6 +73,7 @@ jobs:
           export ASPNETCORE_URLS=http://127.0.0.1:5099
           export App__DataPath="$RUNNER_TEMP/smoke-data"
           export Weather__Enabled=false
+          export TodayFacts__Enabled=false
           (
             cd "$RUNNER_TEMP/publish"
             dotnet LifeManager.Api.dll

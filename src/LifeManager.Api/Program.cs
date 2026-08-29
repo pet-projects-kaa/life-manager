@@ -41,6 +41,11 @@ builder.Services.AddSingleton<BenefitService>();
 builder.Services.AddSingleton<HoroscopeService>();
 builder.Services.AddSingleton<AdviceService>();
 builder.Services.AddSingleton<LegalAdvisorService>();
+builder.Services.AddHttpClient<TodayFactsService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(5);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("LifeManager/1.0 (+https://annushkaaaaa.store/life-manager)");
+});
 builder.Services.AddHttpClient<WeatherService>((sp, client) =>
 {
     var raw = sp.GetRequiredService<IConfiguration>()["Weather:TimeoutSeconds"];
@@ -65,7 +70,7 @@ app.Use(async (context, next) =>
     // DefaultFilesMiddleware so wwwroot/app/index.html is served.
     if (string.Equals(context.Request.Path.Value, "/app", StringComparison.OrdinalIgnoreCase))
     {
-        context.Response.Redirect("/app/");
+        context.Response.Redirect("app/");
         return;
     }
 
@@ -121,16 +126,21 @@ auth.MapGet("/me", (ClaimsPrincipal user) =>
 
 var api = app.MapGroup("/api").RequireAuthorization();
 
-api.MapGet("/dashboard", async (ClaimsPrincipal principal, JsonStore store, WeatherService weatherService, AdviceService adviceService, BenefitService benefits, HoroscopeService horoscopes, CancellationToken ct) =>
+api.MapGet("/dashboard", async (ClaimsPrincipal principal, JsonStore store, WeatherService weatherService, AdviceService adviceService, BenefitService benefits, HoroscopeService horoscopes, TodayFactsService factsService, CancellationToken ct) =>
 {
     var id = UserId(principal);
     var data = await store.GetDataAsync(id);
     var now = DateTimeOffset.Now;
-    var weather = await weatherService.GetAsync(data.Profile, ct);
+    var date = DateOnly.FromDateTime(now.DateTime);
+    var weatherTask = weatherService.GetAsync(data.Profile, ct);
+    var factsTask = factsService.GetAsync(date, ct);
+    await Task.WhenAll(weatherTask, factsTask);
+    var weather = await weatherTask;
+    var facts = await factsTask;
     var advice = adviceService.Build(data, weather, now);
     var benefitCards = benefits.Build(data, now);
-    var horoscope = horoscopes.Get(data.Profile.ZodiacSign, DateOnly.FromDateTime(now.DateTime));
-    var key = DateOnly.FromDateTime(now.DateTime).ToString("yyyy-MM-dd");
+    var horoscope = horoscopes.Get(data.Profile.ZodiacSign, date);
+    var key = date.ToString("yyyy-MM-dd");
 
     var habits = data.Habits.Where(x => !x.IsArchived).Select(x => new
     {
@@ -145,6 +155,7 @@ api.MapGet("/dashboard", async (ClaimsPrincipal principal, JsonStore store, Weat
         date = now,
         weather,
         horoscope,
+        todayFacts = facts,
         tasks,
         habits,
         advice = advice.Take(4),
@@ -156,25 +167,16 @@ api.MapGet("/dashboard", async (ClaimsPrincipal principal, JsonStore store, Weat
 api.MapGet("/profile", async (ClaimsPrincipal principal, JsonStore store) => Results.Ok((await store.GetDataAsync(UserId(principal))).Profile));
 api.MapPut("/profile", async (ProfileRequest request, ClaimsPrincipal principal, JsonStore store) =>
 {
-    if (request.Latitude is < -90 or > 90 || request.Longitude is < -180 or > 180) return Results.BadRequest(new { error = "Некорректные координаты" });
+    if (string.IsNullOrWhiteSpace(request.City)) return Results.BadRequest(new { error = "Укажи город" });
     var data = await store.GetDataAsync(UserId(principal));
-    data.Profile = new Profile
-    {
-        DisplayName = request.DisplayName.Trim(), City = request.City.Trim(), Latitude = request.Latitude,
-        Longitude = request.Longitude, ZodiacSign = request.ZodiacSign.Trim(), ClothingStyle = request.ClothingStyle.Trim()
-    };
+    data.Profile.DisplayName = request.DisplayName.Trim();
+    data.Profile.City = request.City.Trim();
+    data.Profile.ZodiacSign = request.ZodiacSign.Trim();
+    data.Profile.ClothingStyle = request.ClothingStyle.Trim();
     var userId = UserId(principal);
     await store.SaveDataAsync(userId, data);
     await store.UpdateAccountDisplayNameAsync(userId, data.Profile.DisplayName);
     return Results.Ok(data.Profile);
-});
-
-api.MapPost("/demo/seed", async (ClaimsPrincipal principal, JsonStore store) =>
-{
-    var id = UserId(principal);
-    var data = await store.GetDataAsync(id);
-    await store.SeedDemoAsync(id, data.Profile.DisplayName);
-    return Results.NoContent();
 });
 
 api.MapGet("/tasks", async (ClaimsPrincipal p, JsonStore store) =>
@@ -292,6 +294,7 @@ api.MapGet("/horoscope", async (ClaimsPrincipal p, JsonStore store, HoroscopeSer
 {
     var profile = (await store.GetDataAsync(UserId(p))).Profile; return Results.Ok(horoscope.Get(profile.ZodiacSign, DateOnly.FromDateTime(DateTime.Now)));
 });
+api.MapGet("/today-facts", async (TodayFactsService facts, CancellationToken ct) => Results.Ok(await facts.GetAsync(DateOnly.FromDateTime(DateTime.Now), ct)));
 api.MapGet("/advice", async (ClaimsPrincipal p, JsonStore store, WeatherService weather, AdviceService advice, CancellationToken ct) =>
 {
     var data = await store.GetDataAsync(UserId(p)); var w = await weather.GetAsync(data.Profile, ct); return Results.Ok(advice.Build(data, w, DateTimeOffset.Now));

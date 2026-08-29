@@ -13,7 +13,8 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       App__DataPath: /data
       Weather__Enabled: "true"
-      Weather__TimeoutSeconds: "4"
+      Weather__TimeoutSeconds: "5"
+      TodayFacts__Enabled: "true"
     ports:
       - "127.0.0.1:5086:8080"
     volumes:

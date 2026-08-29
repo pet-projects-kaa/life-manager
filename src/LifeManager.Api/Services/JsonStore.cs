@@ -86,12 +86,6 @@ public sealed class JsonStore
         finally { _gate.Release(); }
     }
 
-    public async Task SeedDemoAsync(Guid userId, string displayName)
-    {
-        var data = DemoData.Create(displayName);
-        await SaveDataAsync(userId, data);
-    }
-
     public async Task<string> SaveReceiptAsync(Guid userId, IFormFile file)
     {
         var ext = Path.GetExtension(file.FileName);

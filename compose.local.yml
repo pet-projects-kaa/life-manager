@@ -1,0 +1,16 @@
+name: life-manager-local
+services:
+  life-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: life-manager-local
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      App__DataPath: /app/App_Data
+    ports:
+      - "5086:8080"
+    volumes:
+      - ./App_Data:/app/App_Data

@@ -1,0 +1,14 @@
+# Variant 1: own subdomain
+life.example.com {
+    reverse_proxy life-manager:8080
+}
+
+# Variant 2: path under an existing domain.
+# `handle_path` strips /life before proxying; the app uses relative assets/API URLs,
+# so /life/, /life/app/ and /life/api/* work correctly.
+example.com {
+    redir /life /life/
+    handle_path /life/* {
+        reverse_proxy life-manager:8080
+    }
+}

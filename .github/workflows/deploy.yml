@@ -1,0 +1,217 @@
+name: Deploy Life Manager
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: life-manager-production
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  APP_ARCHIVE_NAME: life-manager-${{ github.sha }}.tar.gz
+  COMPOSE_REMOTE_NAME: life-manager-compose-${{ github.sha }}.yml
+
+jobs:
+  deploy:
+    name: Build and deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Validate frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f src/LifeManager.Api/wwwroot/index.html
+          test -f src/LifeManager.Api/wwwroot/app/index.html
+          test -f src/LifeManager.Api/wwwroot/app/app.js
+          test -f compose.production.yml
+          node --check src/LifeManager.Api/wwwroot/app/app.js
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Restore and publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet restore LifeManager.sln --nologo
+          dotnet build LifeManager.sln -c Release --no-restore --nologo
+          dotnet publish src/LifeManager.Api/LifeManager.Api.csproj \
+            -c Release \
+            -o "$RUNNER_TEMP/publish" \
+            --no-build \
+            --nologo
+          test -f "$RUNNER_TEMP/publish/LifeManager.Api.dll"
+          tar -czf "$RUNNER_TEMP/$APP_ARCHIVE_NAME" -C "$RUNNER_TEMP/publish" .
+          test -s "$RUNNER_TEMP/$APP_ARCHIVE_NAME"
+          du -h "$RUNNER_TEMP/$APP_ARCHIVE_NAME"
+
+      - name: Smoke test published app
+        shell: bash
+        run: |
+          set -euo pipefail
+          export ASPNETCORE_ENVIRONMENT=Development
+          export ASPNETCORE_URLS=http://127.0.0.1:5099
+          export App__DataPath="$RUNNER_TEMP/smoke-data"
+          export Weather__Enabled=false
+          dotnet "$RUNNER_TEMP/publish/LifeManager.Api.dll" > "$RUNNER_TEMP/life-manager-smoke.log" 2>&1 &
+          APP_PID=$!
+          cleanup() { kill "$APP_PID" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+
+          READY=false
+          for attempt in $(seq 1 20); do
+            if curl --fail --silent http://127.0.0.1:5099/health >/dev/null; then READY=true; break; fi
+            sleep 1
+          done
+          if [[ "$READY" != "true" ]]; then
+            cat "$RUNNER_TEMP/life-manager-smoke.log"
+            exit 1
+          fi
+          tests/smoke.sh http://127.0.0.1:5099
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$VPS_HOST" || { echo "VPS_HOST is empty"; exit 1; }
+          test -n "$VPS_USER" || { echo "VPS_USER is empty"; exit 1; }
+          test -n "$VPS_SSH_KEY" || { echo "VPS_SSH_KEY is empty"; exit 1; }
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat > ~/.ssh/config <<'SSHCFG'
+          Host *
+            IdentityFile ~/.ssh/id_ed25519
+            IdentitiesOnly yes
+            StrictHostKeyChecking accept-new
+            UserKnownHostsFile ~/.ssh/known_hosts
+            ConnectTimeout 10
+            ConnectionAttempts 1
+            ServerAliveInterval 15
+            ServerAliveCountMax 2
+            LogLevel ERROR
+          SSHCFG
+          chmod 600 ~/.ssh/config
+
+      - name: Upload release
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          retry_scp() {
+            local src="$1" dst="$2"
+            for attempt in 1 2 3; do
+              if scp "$src" "$dst"; then return 0; fi
+              [[ "$attempt" == "3" ]] && return 1
+              sleep $((attempt * 2))
+            done
+          }
+          retry_scp "$RUNNER_TEMP/$APP_ARCHIVE_NAME" "$VPS_USER@$VPS_HOST:/tmp/$APP_ARCHIVE_NAME"
+          retry_scp compose.production.yml "$VPS_USER@$VPS_HOST:/tmp/$COMPOSE_REMOTE_NAME"
+
+      - name: Activate release
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          RELEASE_SHA: ${{ github.sha }}
+          PUBLIC_URL: ${{ secrets.LIFE_MANAGER_PUBLIC_URL }}
+        run: |
+          set -euo pipefail
+          ssh "$VPS_USER@$VPS_HOST" \
+            "APP_ARCHIVE_PATH='/tmp/$APP_ARCHIVE_NAME' COMPOSE_SOURCE='/tmp/$COMPOSE_REMOTE_NAME' RELEASE_SHA='$RELEASE_SHA' PUBLIC_URL='$PUBLIC_URL' bash -s" <<'REMOTE'
+          set -euo pipefail
+          APP_DIR="$HOME/apps/life-manager"
+          RELEASES_DIR="$APP_DIR/releases"
+
+          docker_cmd() {
+            if docker info >/dev/null 2>&1; then docker "$@"
+            elif sudo -n docker info >/dev/null 2>&1; then sudo -n docker "$@"
+            else echo "User $(whoami) cannot run Docker." >&2; return 1; fi
+          }
+          compose_cmd() {
+            if docker info >/dev/null 2>&1; then docker compose "$@"
+            elif sudo -n docker info >/dev/null 2>&1; then sudo -n docker compose "$@"
+            else echo "Docker Compose unavailable." >&2; return 1; fi
+          }
+
+          mkdir -p "$APP_DIR/data" "$RELEASES_DIR"
+          PREVIOUS="$(readlink -f "$APP_DIR/current" 2>/dev/null || true)"
+          NEXT="$RELEASES_DIR/$RELEASE_SHA"
+          rm -rf "$NEXT"
+          mkdir -p "$NEXT"
+          tar -xzf "$APP_ARCHIVE_PATH" -C "$NEXT"
+          test -f "$NEXT/LifeManager.Api.dll"
+          ln -sfn "$NEXT" "$APP_DIR/current"
+          mv "$COMPOSE_SOURCE" "$APP_DIR/compose.production.yml"
+          rm -f "$APP_ARCHIVE_PATH"
+
+          docker_cmd network inspect shared-proxy >/dev/null || {
+            echo "Docker network shared-proxy does not exist." >&2
+            exit 1
+          }
+
+          cd "$APP_DIR"
+          compose_cmd -f compose.production.yml up -d --force-recreate --remove-orphans life-manager
+
+          LOCAL_OK=false
+          for attempt in $(seq 1 20); do
+            if curl --fail --silent --show-error --connect-timeout 1 --max-time 2 http://127.0.0.1:5086/health >/dev/null; then
+              LOCAL_OK=true
+              echo "Local health check passed on attempt $attempt"
+              break
+            fi
+            sleep 1
+          done
+
+          if [[ "$LOCAL_OK" != "true" ]]; then
+            echo "New release failed health check; rolling back." >&2
+            if [[ -n "$PREVIOUS" && -d "$PREVIOUS" ]]; then
+              ln -sfn "$PREVIOUS" "$APP_DIR/current"
+              compose_cmd -f compose.production.yml up -d --force-recreate --remove-orphans life-manager || true
+            fi
+            compose_cmd -f compose.production.yml logs --tail=200 life-manager || true
+            exit 1
+          fi
+
+          if [[ -n "${PUBLIC_URL:-}" ]]; then
+            EXTERNAL_OK=false
+            for attempt in $(seq 1 10); do
+              if curl --fail --silent --show-error --connect-timeout 2 --max-time 4 "${PUBLIC_URL%/}/health" >/dev/null; then
+                EXTERNAL_OK=true
+                echo "External health check passed on attempt $attempt"
+                break
+              fi
+              sleep 1
+            done
+            [[ "$EXTERNAL_OK" == "true" ]] || { echo "Public URL health check failed." >&2; exit 1; }
+          fi
+
+          ls -1dt "$RELEASES_DIR"/* 2>/dev/null | tail -n +4 | xargs -r rm -rf
+          REMOTE

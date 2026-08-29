@@ -1,0 +1,32 @@
+name: life-manager
+
+services:
+  life-manager:
+    image: mcr.microsoft.com/dotnet/aspnet:8.0
+    pull_policy: missing
+    container_name: life-manager
+    restart: unless-stopped
+    working_dir: /app
+    entrypoint: ["dotnet", "LifeManager.Api.dll"]
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ASPNETCORE_ENVIRONMENT: Production
+      App__DataPath: /app/App_Data
+      Weather__Enabled: "true"
+      Weather__TimeoutSeconds: "4"
+    ports:
+      - "127.0.0.1:5086:8080"
+    volumes:
+      - ./current:/app:ro
+      - ./data:/app/App_Data
+    mem_limit: 512m
+    cpus: 1.0
+    networks:
+      proxy:
+        aliases:
+          - life-manager
+
+networks:
+  proxy:
+    external: true
+    name: shared-proxy

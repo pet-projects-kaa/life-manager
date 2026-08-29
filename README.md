@@ -87,33 +87,25 @@ Workflow: `.github/workflows/deploy.yml`.
 
 Опционально:
 
-- `LIFE_MANAGER_PUBLIC_URL` — полный публичный base URL приложения, например `https://example.com/life`. Workflow проверит `${URL}/health` после деплоя.
+- `LIFE_MANAGER_PUBLIC_URL` — полный публичный base URL приложения. Для текущего production: `https://annushkaaaaa.store/life-manager`. Workflow проверит `${URL}/health` после деплоя.
 
-## Caddy
+## Caddy и публичный URL
 
-Сервис входит в существующую external Docker network `shared-proxy` с alias `life-manager`.
+Production рассчитан на path-based routing:
 
-Примеры находятся в `deploy/Caddyfile.example`.
+- `https://annushkaaaaa.store/life-manager/` — landing;
+- `https://annushkaaaaa.store/life-manager/app/` — приложение;
+- `https://annushkaaaaa.store/life-manager/health` — health-check.
 
-Для пути:
+Caddy работает на VPS как systemd-service и проксирует на `127.0.0.1:5086`. Для `/life-manager/*` используется `handle_path`, поэтому префикс снимается перед передачей в ASP.NET Core. Фронтенд использует относительные URL, поэтому статика, API и PWA продолжают работать под префиксом.
 
-```caddy
-example.com {
-    handle_path /life/* {
-        reverse_proxy life-manager:8080
-    }
-}
-```
+Основной `/etc/caddy/Caddyfile` объявляет `annushkaaaaa.store` один раз и импортирует `/etc/caddy/apps/*.caddy`. Каждый новый проект добавляет только свой route-snippet. Готовый пример находится в `deploy/Caddyfile.example`.
 
-Для поддомена:
+Persistent data в production вынесены из immutable `/app`:
 
-```caddy
-life.example.com {
-    reverse_proxy life-manager:8080
-}
-```
-
-Все ссылки и API-запросы в web UI относительные, поэтому приложение нормально работает и в корне домена, и под `/life/` при `handle_path`.
+- `./current:/app:ro` — код релиза;
+- `./data:/data` — writable данные;
+- `App__DataPath=/data`.
 
 ## Ресурсы VPS
 

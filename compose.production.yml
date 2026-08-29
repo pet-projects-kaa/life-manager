@@ -11,14 +11,14 @@ services:
     environment:
       ASPNETCORE_URLS: http://+:8080
       ASPNETCORE_ENVIRONMENT: Production
-      App__DataPath: /app/App_Data
+      App__DataPath: /data
       Weather__Enabled: "true"
       Weather__TimeoutSeconds: "4"
     ports:
       - "127.0.0.1:5086:8080"
     volumes:
       - ./current:/app:ro
-      - ./data:/app/App_Data
+      - ./data:/data
     mem_limit: 512m
     cpus: 1.0
     networks:

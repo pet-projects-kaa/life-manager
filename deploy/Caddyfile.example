@@ -1,14 +1,24 @@
-# Variant 1: own subdomain
-life.example.com {
-    reverse_proxy life-manager:8080
+# /etc/caddy/Caddyfile
+# Main domain is declared once. Every application contributes only routes.
+{
+    email admin@annushkaaaaa.store
 }
 
-# Variant 2: path under an existing domain.
-# `handle_path` strips /life before proxying; the app uses relative assets/API URLs,
-# so /life/, /life/app/ and /life/api/* work correctly.
-example.com {
-    redir /life /life/
-    handle_path /life/* {
-        reverse_proxy life-manager:8080
-    }
+annushkaaaaa.store {
+    encode zstd gzip
+    import /etc/caddy/apps/*.caddy
 }
+
+# /etc/caddy/apps/life-manager.caddy
+# Caddy runs on the host, so proxy to the localhost port published by Docker.
+redir /life-manager /life-manager/ 308
+
+handle_path /life-manager/* {
+    reverse_proxy 127.0.0.1:5086
+}
+
+# Future application example:
+# redir /another-app /another-app/ 308
+# handle_path /another-app/* {
+#     reverse_proxy 127.0.0.1:5087
+# }

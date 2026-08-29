@@ -2,10 +2,12 @@ namespace LifeManager.Api.Contracts;
 
 public sealed record RegisterRequest(string Email, string Password, string DisplayName);
 public sealed record LoginRequest(string Email, string Password);
-public sealed record ProfileRequest(string DisplayName, string City, string ZodiacSign, string ClothingStyle);
+public sealed record ProfileRequest(string DisplayName, string City, string ZodiacSign, string ClothingStyle, string? Interests);
+public sealed record MoodRequest(string Mood, int Energy);
 public sealed record TaskRequest(string Title, string? Notes, DateTimeOffset? DueAt, string Priority, int? RepeatEveryDays);
 public sealed record HabitRequest(string Title, string Icon, int Target, string Unit);
 public sealed record ShoppingRequest(string Title, string Category, decimal? EstimatedPrice);
+public sealed record ShoppingBulkRequest(IReadOnlyList<string> Items);
 public sealed record PurchaseRequest(string Title, string Category, decimal Amount, DateTimeOffset? PurchasedAt, DateTimeOffset? WarrantyUntil);
 public sealed record HomeItemRequest(string Title, string Category, string? Subtitle, int? RepeatEveryDays, DateTimeOffset? NextDueAt, int? DaysRemaining);
 public sealed record WatchItemRequest(string Title, string Kind, DateTimeOffset? DueAt, decimal? Amount, string? Note, string? SourceUrl);

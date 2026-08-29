@@ -14,7 +14,7 @@ const fmtDate = v => v ? new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'s
 const fmtDateTime = v => v ? new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(v)) : '';
 const daysUntil = v => v ? Math.ceil((new Date(v)-new Date())/86400000) : null;
 const initials = name => (name?.trim()?.[0] || 'L').toUpperCase();
-const iconFor = kind => ({weather:'☔',plan:'✓',habit:'◎',home:'⌂',benefit:'₽',subscription:'↻',warranty:'🛡',insurance:'🚗',deadline:'!',horoscope:'✦'}[kind] || '✦');
+const iconFor = kind => ({weather:'☔',plan:'✓',habit:'◎',home:'⌂',benefit:'₽',subscription:'↻',warranty:'🛡',insurance:'🚗',deadline:'!',horoscope:'✦',mood:'☺',hobby:'◌',reading:'📖'}[kind] || '✦');
 
 async function api(path, options={}){
   const url = new URL(path.replace(/^\//,''), API);
@@ -66,11 +66,15 @@ async function renderToday(){
   const weatherMeta=weather.available
     ? `${weather.minTemperature!=null&&weather.maxTemperature!=null?`${weather.minTemperature}…${weather.maxTemperature}° · `:''}${weather.precipitationProbability!=null?`осадки до ${weather.precipitationProbability}% · `:''}${esc(weather.source||'Open-Meteo')}`
     : esc(weather.source||'Open-Meteo');
+  const mood=d.todayMood;
+  const dayKey=new Date().toISOString().slice(0,10);
+  let cachedImage=''; try{cachedImage=sessionStorage.getItem(`life-day-image:${dayKey}`)||'';}catch{}
   content.innerHTML=pageHead('Сегодня',`Доброе утро, ${firstName} ☀️`,'Собрали главное на сегодня — без лишнего шума.')+`
   <div class="grid two">
     <section class="card weather-card"><div><div class="eyebrow">Погода · ${esc(weather.city)}</div><b class="big">${weather.available?esc(weather.summary):'Нет данных'}</b><p>${esc(weather.outfitAdvice)}</p><small class="tiny">${weatherMeta}</small></div><div class="weather-art">${weather.precipitationProbability>=50?'☔':'☀️'}</div></section>
     <section class="card horoscope-card"><div class="label">Для настроения · ${esc(d.horoscope.sign)} · ${esc(d.horoscope.themeTitle||'день')}</div><h3>Гороскоп на сегодня</h3><p>${esc(d.horoscope.text)}</p><small class="tiny">${esc(d.horoscope.disclaimer)}</small></section>
   </div>
+  <section class="card mood-card" style="margin-top:16px"><div class="card-title"><div><h2>Как ты сегодня?</h2><p class="tiny">Отметка влияет на советы дня, но никуда больше не интерпретируется.</p></div>${mood?`<span class="advice-label">энергия ${mood.energy}/5</span>`:''}</div><div class="mood-picker">${[['great','😄','Отлично',5],['good','🙂','Нормально',4],['neutral','😐','Ровно',3],['tired','😴','Устала',2],['low','🌧️','Не очень',1]].map(([k,i,n,e])=>`<button class="mood-option ${mood?.mood===k?'active':''}" data-mood="${k}" data-energy="${e}"><span>${i}</span><small>${n}</small></button>`).join('')}</div></section>
   <div class="grid two" style="margin-top:16px">
     <section class="card"><div class="card-title"><h2>Сегодня</h2><button class="ghost" data-view="tasks">Все дела</button></div><div class="list">${tasks.length?tasks.slice(0,5).map(taskRow).join(''):empty('День свободен','Добавь дело, если оно действительно нужно.')}</div></section>
     <section class="card"><div class="card-title"><h2>Привычки</h2><button class="ghost" data-view="habits">Открыть</button></div>${habits.length?habits.slice(0,4).map(h=>`<div class="habit-row"><div class="icon-box green">${esc(h.icon)}</div><div><b>${esc(h.title)}</b><small class="tiny">${h.value}/${h.target} ${esc(h.unit)}</small></div><div class="progress"><i style="width:${Math.round((h.progress||0)*100)}%"></i></div><div class="habit-actions"><button data-habit-change="${h.id}" data-delta="1">+</button></div></div>`).join(''):empty('Привычек пока нет','Можно начать с одной простой привычки.')}</section>
@@ -79,6 +83,7 @@ async function renderToday(){
     <section class="card"><div class="card-title"><h2>Совет дня</h2><button class="ghost" data-view="advice">Все советы</button></div>${advice[0]?adviceCard(advice[0],false):empty('Пока всё спокойно','Новых советов на сегодня нет.')}</section>
     <section class="card smart-card green"><div class="card-title"><h2>Не потеряй</h2><button class="ghost" data-view="benefits">Открыть</button></div>${nl[0]?`<div class="advice"><div class="icon-box green">${iconFor(nl[0].kind)}</div><div><h3>${esc(nl[0].title)}</h3><p>${esc(nl[0].text)}</p><span class="advice-label">${nl[0].amount?fmtMoney(nl[0].amount):nl[0].dueAt?'до '+fmtDate(nl[0].dueAt):'Проверить'}</span></div></div>`:empty('Ничего срочного','И это хороший знак.')}</section>
   </div>
+  <section class="card day-image-card" style="margin-top:16px"><div class="card-title"><div><h2>Картинка дня</h2><p class="tiny">Генерируется по теме гороскопа и сегодняшнему настроению. Без нашего API-ключа: через Puter.js.</p></div><button class="secondary" data-generate-day-image>${cachedImage?'Сгенерировать другую':'Сгенерировать'}</button></div><div id="day-image-slot" class="day-image-slot">${cachedImage?`<img src="${cachedImage}" alt="Картинка дня">`:`<div class="image-placeholder"><span>✦</span><b>Сегодняшний визуальный образ появится здесь</b><small>При первом запуске Puter может попросить одноразовое согласие на временную анонимную сессию.</small></div>`}</div></section>
   <section class="card" style="margin-top:16px"><div class="card-title"><h2>Сегодня в истории</h2><span class="tiny">Википедия · факты на ${new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'long'}).format(new Date())}</span></div>${facts.length?`<div class="fact-list">${facts.map(f=>`<div class="step"><span class="num">${f.year??'•'}</span><div><div>${esc(f.text)}</div><a class="advice-label" href="${esc(f.sourceUrl)}" target="_blank" rel="noopener">${esc(f.sourceTitle||'Источник')} ↗</a></div></div>`).join('')}</div>`:empty('Факты не загрузились','Попробуем снова при следующем обновлении.')}</section>`;
 }
 
@@ -103,8 +108,9 @@ async function renderHabits(){
 
 async function renderShopping(){
   const items=await api('shopping'); const total=items.filter(x=>!x.isPurchased).reduce((s,x)=>s+(x.estimatedPrice||0),0); const open=items.filter(x=>!x.isPurchased); const done=items.filter(x=>x.isPurchased);
-  content.innerHTML=pageHead('План','Покупки','Список, ориентировочная сумма и история, из которой могут появляться гарантии и полезные напоминания.',`<button class="primary" data-open-form="shopping">+ Добавить</button>`)+`
-  <div class="chips" style="margin-bottom:16px"><span class="chip active">Все</span><span class="chip">Продукты</span><span class="chip">Дом</span><span class="chip">Питомец</span><span class="chip">Прочее</span></div>
+  content.innerHTML=pageHead('План','Покупки','Можно добавлять по одному или надиктовать целый список голосом.',`<div class="head-actions"><button class="secondary" data-voice-shopping>🎙 Надиктовать</button><button class="primary" data-open-form="shopping">+ Добавить</button></div>`)+`
+  <section class="card voice-shopping-hint"><div class="icon-box purple">🎙</div><div><h3>Скажи список как обычно</h3><p class="muted">Например: «молоко, яйца, корм коту, таблетки для посудомойки». Перед сохранением ты увидишь распознанный текст и сможешь поправить его.</p></div></section>
+  <div class="chips" style="margin:16px 0"><span class="chip active">Все</span><span class="chip">Продукты</span><span class="chip">Дом</span><span class="chip">Питомец</span><span class="chip">Прочее</span></div>
   <section class="card"><div class="list">${open.length?open.map(shopRow).join(''):empty('Список пуст','Нечего покупать — отлично.')}</div><div class="shopping-summary" style="margin-top:14px"><span>Примерная сумма</span><b>${fmtMoney(total)}</b></div></section>
   <div class="grid two" style="margin-top:16px"><section class="card smart-card"><div class="label">Связано с домом</div><h3>Покупка может стать регулярным делом</h3><p>Например, фильтр после покупки можно добавить в «Дом» с циклом замены.</p></section><section class="card"><div class="card-title"><h3>Чек или крупная покупка</h3></div><p class="muted">Добавь отдельную покупку с суммой и гарантией — она попадёт в «Не потеряй».</p><button class="secondary" data-open-form="purchase">Добавить покупку</button></section></div>
   ${done.length?`<section class="card" style="margin-top:16px"><div class="card-title"><h2>Куплено</h2></div><div class="list">${done.slice(0,10).map(shopRow).join('')}</div></section>`:''}`;
@@ -130,20 +136,68 @@ async function renderBenefits(){
 function benefitRow(x){return `<div class="row benefit-row"><div class="icon-box ${x.kind==='benefit'?'green':''}">${iconFor(x.kind)}</div><div class="row-main"><b>${esc(x.title)}</b><small>${esc(x.text)}</small>${x.sourceUrl?`<a class="advice-label" href="${esc(x.sourceUrl)}" target="_blank" rel="noopener">Официальный источник ↗</a>`:''}</div><span class="row-meta">${x.amount?fmtMoney(x.amount):x.dueAt?fmtDate(x.dueAt):''}</span></div>`}
 
 async function renderLegal(){
-  content.innerHTML=pageHead('Помощник','Разобраться','Опиши ситуацию своими словами. Система определит правовую область, соберёт практические шаги и приложит источники для проверки.')+`
-  <section class="card legal-box"><div class="legal-categories">${[['auto','✨ Определить по тексту'],['consumer','🛒 Покупки и услуги'],['housing','🏠 Жильё'],['work','💼 Работа'],['bank','💳 Банк'],['tax','₽ Налоги'],['privacy','🔐 Данные']].map(([k,n])=>`<button class="${state.legalCategory===k?'active':''}" data-legal-cat="${k}">${n}</button>`).join('')}</div><textarea id="legal-text" rows="7" placeholder="Например: заказ в интернет-магазине оплатили 12 августа, обещали доставить до 20-го, сегодня 29-е. Продавец отвечает, что сроки неизвестны. Хочу вернуть деньги."></textarea><div class="tiny" style="margin-top:8px">Чем точнее даты, суммы, документы и желаемый результат — тем полезнее инструкция.</div><button class="primary" style="margin-top:12px" data-legal-submit>Разобраться</button></section><div id="legal-result" style="margin-top:16px"></div>`;
+  content.innerHTML=pageHead('Помощник','Разобраться','Опиши ситуацию свободным текстом. Категория — только подсказка: решение выбирается прежде всего по самому описанию.')+`
+  <section class="card legal-box"><div class="legal-categories">${[['auto','✨ По тексту'],['consumer','🛒 Покупки/услуги'],['housing','🏠 Жильё'],['work','💼 Работа'],['bank','💳 Банк'],['tax','₽ Налоги'],['privacy','🔐 Данные'],['auto','🚗 Авто'],['family','👨‍👩‍👧 Семья']].map(([k,n])=>`<button class="${state.legalCategory===k?'active':''}" data-legal-cat="${k}">${n}</button>`).join('')}</div><textarea id="legal-text" rows="8" placeholder="Например: 12 августа оплатила заказ в интернет-магазине. Доставить обещали до 20 августа, но товар до сих пор не приехал. Продавец пишет, что срок неизвестен. Хочу отказаться от заказа и вернуть деньги."></textarea><div class="tiny" style="margin-top:8px">Лучше указать: кто вторая сторона, даты, сумму, документы и чего именно ты хочешь добиться.</div><button class="primary" style="margin-top:12px" data-legal-submit>Разобраться</button></section><div id="legal-result" style="margin-top:16px"></div>`;
 }
-function renderLegalResult(a){ document.querySelector('#legal-result').innerHTML=`<section class="card"><div class="card-title"><h2>${esc(a.title)}</h2><span class="advice-label">${esc(a.category)}</span></div><p class="muted">${esc(a.summary)}</p><div>${a.steps.map((s,i)=>`<div class="step"><span class="num">${i+1}</span><div>${esc(s)}</div></div>`).join('')}</div>${a.sources?.length?`<div class="sources"><h3>Источники для проверки</h3>${a.sources.map(s=>`<a href="${esc(s.url)}" target="_blank" rel="noopener"><b>${esc(s.title)} ↗</b>${s.note?`<small>${esc(s.note)}</small>`:''}</a>`).join('')}</div>`:''}<div class="disclaimer">${esc(a.disclaimer)}</div></section>`; }
+function renderLegalResult(a){
+  const confidence=a.confidence||0; const questions=a.followUpQuestions||[]; const signals=a.matchedSignals||[];
+  document.querySelector('#legal-result').innerHTML=`<section class="card"><div class="card-title"><div><h2>${esc(a.title)}</h2><div class="legal-meta"><span class="advice-label">${esc(a.category)}</span>${confidence?`<span class="confidence">уверенность ${confidence}%</span>`:''}</div></div></div>${confidence?`<div class="confidence-bar"><i style="width:${confidence}%"></i></div>`:''}<p class="muted">${esc(a.summary)}</p>${signals.length?`<div class="signal-list"><small>Что распознано:</small>${signals.map(x=>`<span>${esc(x)}</span>`).join('')}</div>`:''}<div>${a.steps.map((st,i)=>`<div class="step"><span class="num">${i+1}</span><div>${esc(st)}</div></div>`).join('')}</div>${questions.length?`<div class="follow-ups"><h3>Что уточнить для более точного ответа</h3>${questions.map(q=>`<div>• ${esc(q)}</div>`).join('')}</div>`:''}${a.sources?.length?`<div class="sources"><h3>Источники для проверки</h3>${a.sources.map(src=>`<a href="${esc(src.url)}" target="_blank" rel="noopener"><b>${esc(src.title)} ↗</b>${src.note?`<small>${esc(src.note)}</small>`:''}</a>`).join('')}</div>`:''}<div class="disclaimer">${esc(a.disclaimer)}</div></section>`;
+}
 
 async function renderAdvice(){
-  const items=await api('advice');
-  content.innerHTML=pageHead('Для тебя','Советы','Полезные сигналы собираются из дел, погоды и дома; отдельная развлекательная подсказка строится из темы сегодняшнего гороскопа.')+`<div class="advice-list">${items.length?items.map(a=>`<section class="card">${adviceCard(a,true)}</section>`).join(''):empty('Советов пока нет','Здесь появятся только полезные сигналы.')}</div>`;
+  const [items,reading]=await Promise.all([api('advice'),api('reading-suggestions')]);
+  content.innerHTML=pageHead('Для тебя','Советы','Здесь учитываются дела, погода, настроение, интересы и развлекательная тема гороскопа.')+`
+  <section class="card reading-card"><div class="card-title"><div><h2>Что интересно почитать</h2><p class="tiny">Подборка меняется ежедневно по интересам из профиля и теме дня.</p></div><span class="advice-label">Википедия</span></div>${reading.length?`<div class="reading-grid">${reading.map(r=>`<a href="${esc(r.url)}" target="_blank" rel="noopener" class="reading-item"><span>📖</span><div><b>${esc(r.title)}</b><p>${esc(r.snippet)}</p><small>${esc(r.topic)} · открыть ↗</small></div></a>`).join('')}</div>`:empty('Пока ничего не подобрали','Добавь интересы и хобби в профиле или обнови страницу чуть позже.')}</section>
+  <div class="advice-list" style="margin-top:16px">${items.length?items.map(a=>`<section class="card">${adviceCard(a,true)}</section>`).join(''):empty('Советов пока нет','Здесь появятся только полезные сигналы.')}</div>`;
 }
 
 async function renderProfile(){
   const p=await api('profile');
-  content.innerHTML=pageHead('Аккаунт','Профиль','По названию города автоматически определяется прогноз; координаты вводить больше не нужно.',`<button class="ghost" data-logout>Выйти</button>`)+`
-  <div class="profile-grid"><section class="card"><div class="profile-person"><span class="big-avatar">${initials(p.displayName)}</span><div><h2>${esc(p.displayName)}</h2><p class="muted">${esc(state.me.email||'')}</p></div></div><form id="profile-form" class="form-grid"><label>Имя<input name="displayName" value="${esc(p.displayName)}" required></label><label>Город<input name="city" value="${esc(p.city)}" required placeholder="Например, Челябинск"></label><label>Знак зодиака<select name="zodiacSign">${['Овен','Телец','Близнецы','Рак','Лев','Дева','Весы','Скорпион','Стрелец','Козерог','Водолей','Рыбы'].map(x=>`<option ${x===p.zodiacSign?'selected':''}>${x}</option>`).join('')}</select></label><label>Стиль одежды<select name="clothingStyle"><option value="casual" ${p.clothingStyle==='casual'?'selected':''}>Casual</option><option value="classic" ${p.clothingStyle==='classic'?'selected':''}>Классический</option><option value="sport" ${p.clothingStyle==='sport'?'selected':''}>Спортивный</option></select></label><div class="full"><button class="primary" type="submit">Сохранить</button></div></form></section><section class="card"><div class="card-title"><h2>На телефоне</h2></div><h3>PWA</h3><p class="muted">Открой меню браузера → «Добавить на экран Домой». Life Manager будет запускаться почти как обычное приложение.</p><hr style="border:0;border-top:1px solid var(--line);margin:22px 0"><h3>Откуда берутся данные</h3><p class="muted">Погода — Open-Meteo по указанному городу. Факты дня — русская Википедия. Юридический помощник прикладывает КонсультантПлюс и профильные официальные ресурсы для проверки.</p></section></div>`;
+  content.innerHTML=pageHead('Аккаунт','Профиль','Город нужен для погоды, а интересы и хобби — для персональных советов и чтения.',`<button class="ghost" data-logout>Выйти</button>`)+`
+  <div class="profile-grid"><section class="card"><div class="profile-person"><span class="big-avatar">${initials(p.displayName)}</span><div><h2>${esc(p.displayName)}</h2><p class="muted">${esc(state.me.email||'')}</p></div></div><form id="profile-form" class="form-grid"><label>Имя<input name="displayName" value="${esc(p.displayName)}" required></label><label>Город<input name="city" value="${esc(p.city)}" required placeholder="Например, Челябинск"></label><label>Знак зодиака<select name="zodiacSign">${['Овен','Телец','Близнецы','Рак','Лев','Дева','Весы','Скорпион','Стрелец','Козерог','Водолей','Рыбы'].map(x=>`<option ${x===p.zodiacSign?'selected':''}>${x}</option>`).join('')}</select></label><label>Стиль одежды<select name="clothingStyle"><option value="casual" ${p.clothingStyle==='casual'?'selected':''}>Casual</option><option value="classic" ${p.clothingStyle==='classic'?'selected':''}>Классический</option><option value="sport" ${p.clothingStyle==='sport'?'selected':''}>Спортивный</option></select></label><label class="full">Интересы и хобби<textarea name="interests" rows="3" placeholder="Например: интерьер, история, книги, психология, C#, фотография">${esc(p.interests||'')}</textarea><small class="tiny">Через запятую. Используем для советов и блока «Что почитать».</small></label><div class="full"><button class="primary" type="submit">Сохранить</button></div></form></section><section class="card"><div class="card-title"><h2>На телефоне</h2></div><h3>PWA</h3><p class="muted">Открой меню браузера → «Добавить на экран Домой». Life Manager будет запускаться почти как обычное приложение.</p><hr style="border:0;border-top:1px solid var(--line);margin:22px 0"><h3>Откуда берутся данные</h3><p class="muted">Погода — Open-Meteo по городу. Факты и чтение — Википедия. Юридический помощник подбирает сценарий по тексту и прикладывает КонсультантПлюс и профильные официальные ресурсы. Картинка дня генерируется на клиенте через Puter.js — наш сервер не хранит ключ AI-провайдера.</p></section></div>`;
+}
+
+function parseShoppingTranscript(text){
+  let clean=(text||'').replace(/\b(?:добавь|добавить|купи|купить|нужно купить|надо купить|запиши|в список)\b/gi,' ').replace(/\s+/g,' ').trim();
+  return clean.split(/[,;\n.!?]+|\s+(?:и еще|ещ[её]|плюс)\s+/i).map(x=>x.trim().replace(/^и\s+/i,'')).filter(x=>x.length>0&&x.length<=160).slice(0,50);
+}
+function voiceShoppingModal(){
+  openModal(`<h2>🎙 Голосовой список</h2><p class="muted">Говори естественно: «молоко, яйца, корм коту, таблетки для посудомойки». Можно исправить текст перед добавлением.</p><div class="voice-status" id="voice-status">Нажимаем микрофон…</div><textarea id="voice-shopping-text" rows="6" placeholder="Распознанный список появится здесь"></textarea><div class="form-actions"><button type="button" class="ghost" data-voice-stop>Остановить</button><button type="button" class="primary" data-voice-add>Добавить список</button></div>`);
+}
+function startVoiceShopping(){
+  const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+  voiceShoppingModal();
+  if(!Recognition){ document.querySelector('#voice-status').textContent='В этом браузере нет SpeechRecognition. Можно продиктовать в системную клавиатуру или вписать список сюда вручную.'; return; }
+  const rec=new Recognition(); window.__lifeShoppingRecognition=rec; rec.lang='ru-RU'; rec.continuous=true; rec.interimResults=true;
+  let finalText=''; const area=document.querySelector('#voice-shopping-text'), status=document.querySelector('#voice-status');
+  rec.onstart=()=>{status.textContent='Слушаю… говори список. Браузер может запросить доступ к микрофону.';status.classList.add('listening')};
+  rec.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal)finalText+=t+', ';else interim+=t;}area.value=(finalText+interim).trim();};
+  rec.onerror=e=>{status.textContent=e.error==='not-allowed'?'Нет доступа к микрофону. Разреши его в настройках браузера.':`Не получилось распознать: ${e.error}`;status.classList.remove('listening')};
+  rec.onend=()=>{status.textContent=area.value?'Готово. Проверь текст и добавь список.':'Запись остановлена.';status.classList.remove('listening')};
+  try{rec.start()}catch{status.textContent='Микрофон уже запущен.'}
+}
+async function addVoiceShopping(){
+  const text=document.querySelector('#voice-shopping-text')?.value||''; const items=parseShoppingTranscript(text);
+  if(!items.length){toast('Не вижу товаров в тексте');return;}
+  try{window.__lifeShoppingRecognition?.stop()}catch{}
+  const created=await api('shopping/bulk',{method:'POST',body:JSON.stringify({items})}); closeModal(); toast(`Добавлено: ${created.length}`); await route('shopping',false);
+}
+function dayImagePrompt(){
+  const d=state.data||{}; const mood=d.todayMood?.mood||'neutral'; const moodText={great:'bright and energetic',good:'calm and pleasant',neutral:'balanced and quiet',tired:'soft and restful',low:'gentle and comforting'}[mood]||'balanced';
+  const theme=d.horoscope?.themeTitle||'focus'; const city=d.profile?.city||'';
+  return `A beautiful editorial illustration for a personal daily journal. Mood: ${moodText}. Theme of the day: ${theme}. Subtle atmosphere inspired by ${city}. Modern minimal composition, sophisticated natural light, calm premium lifestyle aesthetic, no people close-up, no logos, no text, no letters, no typography, landscape 16:9.`;
+}
+async function generateDayImage(){
+  const slot=document.querySelector('#day-image-slot'), btn=document.querySelector('[data-generate-day-image]'); if(!slot||!btn)return;
+  if(!window.puter?.ai?.txt2img){toast('Генератор изображений пока не загрузился');return;}
+  btn.disabled=true; btn.textContent='Генерируем…'; slot.innerHTML='<div class="image-placeholder generating"><span>✦</span><b>Собираем картинку дня…</b><small>Это может занять немного времени.</small></div>';
+  try{
+    if(window.puter.auth && !window.puter.auth.isSignedIn()) await window.puter.auth.signIn({attempt_temp_user_creation:true});
+    const img=await window.puter.ai.txt2img(dayImagePrompt(),{provider:'replicate-image-generation',model:'black-forest-labs/flux-schnell',ratio:{w:16,h:9},steps:4});
+    img.alt='Картинка дня'; slot.innerHTML=''; slot.appendChild(img); try{sessionStorage.setItem(`life-day-image:${new Date().toISOString().slice(0,10)}`,img.src)}catch{}
+    btn.textContent='Сгенерировать другую';
+  }catch(e){slot.innerHTML=`<div class="image-placeholder"><span>×</span><b>Не получилось сгенерировать</b><small>${esc(e?.message||'Публичный AI-сервис временно недоступен')}</small></div>`;btn.textContent='Попробовать ещё';}
+  finally{btn.disabled=false;}
 }
 
 function openForm(type){
@@ -183,6 +237,11 @@ document.addEventListener('click',async e=>{
   const home=e.target.closest('[data-home-complete]'); if(home){ await api(`home/${home.dataset.homeComplete}/complete`,{method:'POST'}); toast('Домовое дело обновлено'); await route('home',false); return; }
   const wr=e.target.closest('[data-watch-resolve]'); if(wr){ await api(`watch/${wr.dataset.watchResolve}/resolve`,{method:'POST'}); await route('benefits',false); return; }
   const af=e.target.closest('[data-advice-feedback]'); if(af){ await api('advice/feedback',{method:'POST',body:JSON.stringify({adviceKey:af.dataset.adviceFeedback,kind:af.dataset.adviceKind||'',useful:af.dataset.useful==='true'})}); toast('Спасибо — учтём'); return; }
+  const mood=e.target.closest('[data-mood]'); if(mood){ await api('mood',{method:'POST',body:JSON.stringify({mood:mood.dataset.mood,energy:Number(mood.dataset.energy||3)})}); toast('Учтём настроение в советах'); await route('today',false); return; }
+  if(e.target.closest('[data-voice-shopping]')){ startVoiceShopping(); return; }
+  if(e.target.closest('[data-voice-stop]')){ try{window.__lifeShoppingRecognition?.stop()}catch{} return; }
+  if(e.target.closest('[data-voice-add]')){ await addVoiceShopping(); return; }
+  if(e.target.closest('[data-generate-day-image]')){ await generateDayImage(); return; }
   const lc=e.target.closest('[data-legal-cat]'); if(lc){ state.legalCategory=lc.dataset.legalCat; document.querySelectorAll('[data-legal-cat]').forEach(x=>x.classList.toggle('active',x.dataset.legalCat===state.legalCategory)); return; }
   if(e.target.closest('[data-legal-submit]')){ const text=document.querySelector('#legal-text').value.trim(); if(!text){toast('Опиши ситуацию');return;} const a=await api('legal/advice',{method:'POST',body:JSON.stringify({category:state.legalCategory,text})}); renderLegalResult(a); return; }
   if(e.target.closest('[data-logout]')){ await api('auth/logout',{method:'POST'}); state.me=null; showAuth(); return; }

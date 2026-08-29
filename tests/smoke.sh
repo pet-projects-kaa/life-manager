@@ -57,6 +57,16 @@ curl -fsS -b "$COOKIE_JAR" -H 'Content-Type: application/json' \
   -d '{"title":"Smoke milk","category":"food","estimatedPrice":100}' \
   "$BASE_URL/api/shopping" >/dev/null
 
+echo "[smoke] bulk shopping"
+curl -fsS -b "$COOKIE_JAR" -H 'Content-Type: application/json' \
+  -d '{"items":["Хлеб","Корм коту"]}' \
+  "$BASE_URL/api/shopping/bulk" >/dev/null
+
+echo "[smoke] mood"
+curl -fsS -b "$COOKIE_JAR" -H 'Content-Type: application/json' \
+  -d '{"mood":"good","energy":4}' \
+  "$BASE_URL/api/mood" >/dev/null
+
 check_get_auth "dashboard" "$BASE_URL/api/dashboard" '"profile"'
 check_get_auth "tasks" "$BASE_URL/api/tasks" 'Smoke task'
 check_get_auth "habits" "$BASE_URL/api/habits" 'Smoke habit'
@@ -66,9 +76,10 @@ check_get_auth "advice" "$BASE_URL/api/advice" '"title"'
 echo "[smoke] legal advice"
 LEGAL_BODY="$(curl -fsS -b "$COOKIE_JAR" \
   -H 'Content-Type: application/json' \
-  -d '{"category":"auto","text":"Интернет-магазин задержал доставку заказа на неделю, хочу вернуть деньги"}' \
+  -d '{"category":"auto","text":"Я заранее оплатила заказ в интернет-магазине. Срок доставки прошел неделю назад, товар не передали. Хочу вернуть предоплату."}' \
   "$BASE_URL/api/legal/advice")"
-assert_contains "legal advice title" "$LEGAL_BODY" 'Задержка или проблема с доставкой'
+assert_contains "legal advice title" "$LEGAL_BODY" 'Нарушен срок доставки оплаченного товара'
+assert_contains "legal advice confidence" "$LEGAL_BODY" '"confidence"'
 assert_contains "legal advice source" "$LEGAL_BODY" 'consultant.ru'
 
 echo "Smoke test passed"

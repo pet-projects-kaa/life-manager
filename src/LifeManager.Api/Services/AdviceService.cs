@@ -33,9 +33,16 @@ public sealed class AdviceService(BenefitService benefitService, HoroscopeServic
         foreach (var benefit in benefitService.Build(data, now).Take(3))
             result.Add(new($"benefit:{benefit.Key}", "benefit", benefit.Title, benefit.Text, "Не потеряй", benefit.Priority, "Выгода"));
 
-        // Развлекательная подсказка строится именно из темы гороскопа, а не существует отдельным случайным текстом.
         var horoscope = horoscopeService.Get(data.Profile.ZodiacSign, DateOnly.FromDateTime(now.DateTime));
         result.Add(BuildHoroscopeAdvice(horoscope, data, todayTasks, now));
+
+        var mood = GetTodayMood(data, now);
+        if (mood is not null)
+            result.Add(BuildMoodAdvice(mood, data.Profile.Interests, todayTasks));
+
+        var hobbyAdvice = BuildHobbyAdvice(data.Profile.Interests, mood, now);
+        if (hobbyAdvice is not null)
+            result.Add(hobbyAdvice);
 
         var keyFeedback = data.AdviceFeedback
             .GroupBy(x => x.AdviceKey)
@@ -53,8 +60,50 @@ public sealed class AdviceService(BenefitService benefitService, HoroscopeServic
                 return x with { Priority = x.Priority + keyScore * 5 + kindScore * 3 };
             })
             .OrderByDescending(x => x.Priority)
-            .Take(8)
+            .Take(10)
             .ToArray();
+    }
+
+    private static MoodEntry? GetTodayMood(LifeData data, DateTimeOffset now)
+    {
+        var key = DateOnly.FromDateTime(now.DateTime).ToString("yyyy-MM-dd");
+        return data.MoodEntries.LastOrDefault(x => x.DateKey == key);
+    }
+
+    private static AdviceCard BuildMoodAdvice(MoodEntry mood, string interests, IReadOnlyList<LifeTask> todayTasks)
+    {
+        var hobby = FirstInterest(interests);
+        return mood.Mood switch
+        {
+            "great" => new("mood:great", "mood", "Похоже, сегодня есть хороший запас энергии",
+                hobby is not null ? $"Если останется свободное окно, отдай 20–30 минут тому, что тебе действительно интересно — например, «{hobby}». Хорошее настроение не обязательно тратить только на продуктивность." : "Оставь кусочек дня на что-то приятное, а не только на список дел.",
+                "Настроение", 78, "Настроение"),
+            "good" => new("mood:good", "mood", "Нормальный день — не обязательно его разгонять",
+                hobby is not null ? $"Можно спокойно выделить 15–20 минут на «{hobby}» без цели получить результат." : "Если дела идут нормально, не обязательно заполнять освободившееся время новыми обязательствами.",
+                "Настроение", 72, "Настроение"),
+            "tired" => new("mood:tired", "mood", "Сегодня лучше снизить стоимость входа",
+                todayTasks.Count > 0 ? $"Начни с самого короткого дела из списка и оставь сложные решения на более бодрое окно. Энергия отмечена как {mood.Energy}/5." : "Выбери занятие, которое не требует разгона: короткая прогулка, музыка, несколько страниц книги или спокойное хобби.",
+                "Настроение", 90, "Настроение"),
+            "low" => new("mood:low", "mood", "Можно сделать день мягче",
+                "Не ставь себе задачу срочно «исправить настроение». Сократи необязательное, выбери одно простое приятное действие и оставь больше пространства без требований к себе.",
+                "Настроение", 92, "Настроение"),
+            _ => new("mood:neutral", "mood", "Нейтральный день хорошо подходит для маленького переключения",
+                hobby is not null ? $"Если появится 15 минут без дела, попробуй вернуться к «{hobby}» — без обязательства заниматься долго." : "Небольшая прогулка, музыка или чтение могут дать дню отдельную приятную точку.",
+                "Настроение", 64, "Настроение")
+        };
+    }
+
+    private static AdviceCard? BuildHobbyAdvice(string interests, MoodEntry? mood, DateTimeOffset now)
+    {
+        var all = ParseInterests(interests).ToArray();
+        if (all.Length == 0) return null;
+        var index = Math.Abs(HashCode.Combine(now.Date.DayOfYear, now.Year)) % all.Length;
+        var interest = all[index];
+        var lowEnergy = mood?.Mood is "tired" or "low" || mood?.Energy <= 2;
+        var text = lowEnergy
+            ? $"Сегодня для «{interest}» лучше выбрать лёгкий формат: посмотреть короткий разбор, сохранить идею или уделить этому 10 минут без обязательств."
+            : $"Попробуй сегодня выделить 20 минут на «{interest}» и выбрать одну маленькую вещь, которую интересно попробовать или узнать.";
+        return new($"hobby:{interest.ToLowerInvariant()}", "hobby", $"Немного времени на «{interest}»", text, "Хобби", 68, "Интересы");
     }
 
     private static AdviceCard BuildHoroscopeAdvice(HoroscopeCard horoscope, LifeData data, IReadOnlyList<LifeTask> todayTasks, DateTimeOffset now)
@@ -78,4 +127,13 @@ public sealed class AdviceService(BenefitService benefitService, HoroscopeServic
         };
         return new($"horoscope:{horoscope.Theme}", "horoscope", title, text, $"Гороскоп · {horoscope.ThemeTitle}", 80, "Гороскоп");
     }
+
+    private static IEnumerable<string> ParseInterests(string? interests)
+        => (interests ?? string.Empty)
+            .Split([',', ';', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(x => x.Length is >= 2 and <= 80)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(12);
+
+    private static string? FirstInterest(string? interests) => ParseInterests(interests).FirstOrDefault();
 }

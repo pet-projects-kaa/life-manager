@@ -148,3 +148,18 @@ Production compose ограничивает контейнер примерно:
 ### Погода и приватность
 
 Для получения прогноза сервер отправляет сохранённые в профиле координаты в Open-Meteo. Если это не нужно, установи `Weather__Enabled=false`; приложение продолжит работать с fallback-карточкой.
+
+## V3 additions
+
+- Voice shopping list: the browser Web Speech API records Russian speech, shows the transcript for editing, then adds up to 50 items in one API call with lightweight category detection.
+- Daily mood check-in: five quick states are persisted per day and influence advice ranking/text.
+- Interests/hobbies in Profile: comma-separated interests are used for hobby prompts and daily reading recommendations.
+- Reading recommendations: server-side Wikipedia search selects up to three articles from the user's interests; if none are configured, the day's horoscope theme supplies a neutral topic.
+- Legal helper v3: scenario-level classification instead of broad keyword buckets, weighted phrases + roots, ambiguity detection, classification confidence, follow-up questions and scenario-specific ConsultantPlus/official sources.
+- Image of the day: client-side Puter.js integration. Generation starts only by explicit button click. No Life Manager API key is stored; Puter may show a one-time consent/auth popup and can create a temporary user session.
+
+### Browser notes
+
+Voice recognition uses `SpeechRecognition` / `webkitSpeechRecognition`, so availability depends on browser/platform and microphone permission. When unsupported, the same dialog works as a manual multi-item list input.
+
+Image generation requires loading `https://js.puter.com/v2/`. If the external service is unavailable or the user declines its consent flow, the rest of Life Manager continues to work normally.

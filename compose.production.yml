@@ -15,6 +15,7 @@ services:
       Weather__Enabled: "true"
       Weather__TimeoutSeconds: "5"
       TodayFacts__Enabled: "true"
+      Reading__Enabled: "true"
     ports:
       - "127.0.0.1:5086:8080"
     volumes:

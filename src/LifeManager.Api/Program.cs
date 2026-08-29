@@ -46,6 +46,11 @@ builder.Services.AddHttpClient<TodayFactsService>(client =>
     client.Timeout = TimeSpan.FromSeconds(5);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("LifeManager/1.0 (+https://annushkaaaaa.store/life-manager)");
 });
+builder.Services.AddHttpClient<ReadingSuggestionService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(6);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("LifeManager/1.0 (+https://annushkaaaaa.store/life-manager)");
+});
 builder.Services.AddHttpClient<WeatherService>((sp, client) =>
 {
     var raw = sp.GetRequiredService<IConfiguration>()["Weather:TimeoutSeconds"];
@@ -141,6 +146,7 @@ api.MapGet("/dashboard", async (ClaimsPrincipal principal, JsonStore store, Weat
     var benefitCards = benefits.Build(data, now);
     var horoscope = horoscopes.Get(data.Profile.ZodiacSign, date);
     var key = date.ToString("yyyy-MM-dd");
+    var todayMood = data.MoodEntries.LastOrDefault(x => x.DateKey == key);
 
     var habits = data.Habits.Where(x => !x.IsArchived).Select(x => new
     {
@@ -156,6 +162,7 @@ api.MapGet("/dashboard", async (ClaimsPrincipal principal, JsonStore store, Weat
         weather,
         horoscope,
         todayFacts = facts,
+        todayMood,
         tasks,
         habits,
         advice = advice.Take(4),
@@ -173,10 +180,29 @@ api.MapPut("/profile", async (ProfileRequest request, ClaimsPrincipal principal,
     data.Profile.City = request.City.Trim();
     data.Profile.ZodiacSign = request.ZodiacSign.Trim();
     data.Profile.ClothingStyle = request.ClothingStyle.Trim();
+    data.Profile.Interests = (request.Interests ?? string.Empty).Trim();
     var userId = UserId(principal);
     await store.SaveDataAsync(userId, data);
     await store.UpdateAccountDisplayNameAsync(userId, data.Profile.DisplayName);
     return Results.Ok(data.Profile);
+});
+
+api.MapGet("/mood/today", async (ClaimsPrincipal p, JsonStore store) =>
+{
+    var data = await store.GetDataAsync(UserId(p));
+    var key = DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd");
+    return Results.Ok(data.MoodEntries.LastOrDefault(x => x.DateKey == key));
+});
+api.MapPost("/mood", async (MoodRequest req, ClaimsPrincipal p, JsonStore store) =>
+{
+    var allowed = new HashSet<string>(["great", "good", "neutral", "tired", "low"], StringComparer.OrdinalIgnoreCase);
+    if (!allowed.Contains(req.Mood)) return Results.BadRequest(new { error = "Неизвестное настроение" });
+    if (req.Energy is < 1 or > 5) return Results.BadRequest(new { error = "Энергия должна быть от 1 до 5" });
+    var id = UserId(p); var data = await store.GetDataAsync(id); var key = DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd");
+    var item = data.MoodEntries.LastOrDefault(x => x.DateKey == key);
+    if (item is null) { item = new MoodEntry { DateKey = key }; data.MoodEntries.Add(item); }
+    item.Mood = req.Mood.ToLowerInvariant(); item.Energy = req.Energy; item.UpdatedAt = DateTimeOffset.UtcNow;
+    await store.SaveDataAsync(id, data); return Results.Ok(item);
 });
 
 api.MapGet("/tasks", async (ClaimsPrincipal p, JsonStore store) =>
@@ -235,6 +261,23 @@ api.MapPost("/shopping", async (ShoppingRequest req, ClaimsPrincipal p, JsonStor
     if (string.IsNullOrWhiteSpace(req.Title)) return Results.BadRequest(new { error = "Название обязательно" });
     var data = await store.GetDataAsync(UserId(p)); var item = new ShoppingItem { Title = req.Title.Trim(), Category = req.Category, EstimatedPrice = req.EstimatedPrice };
     data.ShoppingItems.Add(item); await store.SaveDataAsync(UserId(p), data); return Results.Ok(item);
+});
+api.MapPost("/shopping/bulk", async (ShoppingBulkRequest req, ClaimsPrincipal p, JsonStore store) =>
+{
+    var clean = (req.Items ?? Array.Empty<string>())
+        .Select(x => (x ?? string.Empty).Trim())
+        .Where(x => x.Length is >= 1 and <= 160)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .Take(50)
+        .ToArray();
+    if (clean.Length == 0) return Results.BadRequest(new { error = "Не удалось распознать товары" });
+    var id = UserId(p); var data = await store.GetDataAsync(id); var created = new List<ShoppingItem>();
+    foreach (var title in clean)
+    {
+        var item = new ShoppingItem { Title = title, Category = GuessShoppingCategory(title) };
+        data.ShoppingItems.Add(item); created.Add(item);
+    }
+    await store.SaveDataAsync(id, data); return Results.Ok(created);
 });
 api.MapPost("/shopping/{id:guid}/toggle", async (Guid id, ClaimsPrincipal p, JsonStore store) =>
 {
@@ -295,6 +338,13 @@ api.MapGet("/horoscope", async (ClaimsPrincipal p, JsonStore store, HoroscopeSer
     var profile = (await store.GetDataAsync(UserId(p))).Profile; return Results.Ok(horoscope.Get(profile.ZodiacSign, DateOnly.FromDateTime(DateTime.Now)));
 });
 api.MapGet("/today-facts", async (TodayFactsService facts, CancellationToken ct) => Results.Ok(await facts.GetAsync(DateOnly.FromDateTime(DateTime.Now), ct)));
+api.MapGet("/reading-suggestions", async (ClaimsPrincipal p, JsonStore store, HoroscopeService horoscope, ReadingSuggestionService reading, CancellationToken ct) =>
+{
+    var data = await store.GetDataAsync(UserId(p));
+    var date = DateOnly.FromDateTime(DateTime.Now);
+    var card = horoscope.Get(data.Profile.ZodiacSign, date);
+    return Results.Ok(await reading.GetAsync(data.Profile, card, date, ct));
+});
 api.MapGet("/advice", async (ClaimsPrincipal p, JsonStore store, WeatherService weather, AdviceService advice, CancellationToken ct) =>
 {
     var data = await store.GetDataAsync(UserId(p)); var w = await weather.GetAsync(data.Profile, ct); return Results.Ok(advice.Build(data, w, DateTimeOffset.Now));
@@ -332,6 +382,19 @@ static object HabitStats(Habit habit)
     var weekdays = Enumerable.Range(0, 30).Where(i => now.AddDays(-i).DayOfWeek is not DayOfWeek.Saturday and not DayOfWeek.Sunday).Select(i => values[i]).DefaultIfEmpty(0).Average();
     var weekends = Enumerable.Range(0, 30).Where(i => now.AddDays(-i).DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday).Select(i => values[i]).DefaultIfEmpty(0).Average();
     return new { completedDays = completed, totalDays = 30, betterOnWeekdays = weekdays >= weekends };
+}
+
+static string GuessShoppingCategory(string title)
+{
+    var n = title.ToLowerInvariant().Replace('ё', 'е');
+    if (new[] { "кот", "кош", "собак", "корм", "наполнитель", "лакомств", "поводок" }.Any(x => n.Contains(x, StringComparison.OrdinalIgnoreCase))) return "pet";
+    if (new[] { "молок", "хлеб", "яйц", "сыр", "мяс", "куриц", "рыб", "овощ", "фрукт", "йогурт", "кофе", "чай", "вода", "масло", "макарон", "круп" }.Any(x => n.Contains(x, StringComparison.OrdinalIgnoreCase))) return "food";
+    if (new[] { "таблет", "лекар", "витамин", "аптек", "пластыр", "шампун", "крем" }.Any(x => n.Contains(x, StringComparison.OrdinalIgnoreCase))) return "medical";
+    if (new[] { "ламп", "фильтр", "губк", "порошок", "средство", "бумага", "полотен", "пакет", "батарей" }.Any(x => n.Contains(x, StringComparison.OrdinalIgnoreCase))) return "home";
+    if (new[] { "книг", "курс", "тетрад", "учеб" }.Any(x => n.Contains(x, StringComparison.OrdinalIgnoreCase))) return "education";
+    if (new[] { "гантел", "коврик", "спорт", "протеин" }.Any(x => n.Contains(x, StringComparison.OrdinalIgnoreCase))) return "fitness";
+    if (new[] { "телефон", "ноутбук", "пылесос", "чайник", "техника", "наушник" }.Any(x => n.Contains(x, StringComparison.OrdinalIgnoreCase))) return "appliance";
+    return "other";
 }
 
 static async Task<IResult> DeleteAsync(ClaimsPrincipal p, JsonStore store, Func<LifeData, int> delete)

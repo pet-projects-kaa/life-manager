@@ -22,16 +22,27 @@ public sealed class LifeData
     public List<HomeItem> HomeItems { get; set; } = [];
     public List<WatchItem> WatchItems { get; set; } = [];
     public List<AdviceFeedback> AdviceFeedback { get; set; } = [];
+    public List<MoodEntry> MoodEntries { get; set; } = [];
 }
 
 public sealed class Profile
 {
     public string DisplayName { get; set; } = "Друг";
     public string City { get; set; } = "Москва";
+    // Kept for backward-compatible stored profiles. Weather now resolves by City first.
     public double Latitude { get; set; } = 55.7558;
     public double Longitude { get; set; } = 37.6176;
     public string ZodiacSign { get; set; } = "Лев";
     public string ClothingStyle { get; set; } = "casual";
+    public string Interests { get; set; } = "";
+}
+
+public sealed class MoodEntry
+{
+    public string DateKey { get; set; } = DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd");
+    public string Mood { get; set; } = "neutral";
+    public int Energy { get; set; } = 3;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
 public sealed class LifeTask
@@ -73,7 +84,7 @@ public sealed class PurchaseRecord
     public string Title { get; set; } = "";
     public string Category { get; set; } = "other";
     public decimal Amount { get; set; }
-    public DateTimeOffset PurchasedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset PurchasedAt { get; set; } = DateTimeOffset.Now;
     public DateTimeOffset? WarrantyUntil { get; set; }
     public string? ReceiptPath { get; set; }
 }
@@ -116,4 +127,14 @@ public sealed record WeatherSnapshot(bool Available, string City, double? Temper
 public sealed record HoroscopeCard(string Sign, string Text, string Disclaimer, string Theme, string ThemeTitle);
 public sealed record LegalSource(string Title, string Url, string? Note = null);
 public sealed record TodayFact(int? Year, string Text, string SourceUrl, string SourceTitle);
-public sealed record LegalAdvice(string Category, string Title, string Summary, IReadOnlyList<string> Steps, IReadOnlyList<LegalSource> Sources, string Disclaimer);
+public sealed record ReadingSuggestion(string Title, string Snippet, string Url, string Topic, string Source);
+public sealed record LegalAdvice(
+    string Category,
+    string Title,
+    string Summary,
+    IReadOnlyList<string> Steps,
+    IReadOnlyList<LegalSource> Sources,
+    string Disclaimer,
+    int Confidence = 0,
+    IReadOnlyList<string>? MatchedSignals = null,
+    IReadOnlyList<string>? FollowUpQuestions = null);

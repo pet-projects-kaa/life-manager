@@ -58,13 +58,25 @@ app.Use(async (context, next) =>
     context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
     await next();
 });
+app.Use(async (context, next) =>
+{
+    // Keep the canonical app URL with a trailing slash without letting endpoint
+    // routing treat /app and /app/ as the same route. /app/ must continue into
+    // DefaultFilesMiddleware so wwwroot/app/index.html is served.
+    if (string.Equals(context.Request.Path.Value, "/app", StringComparison.OrdinalIgnoreCase))
+    {
+        context.Response.Redirect("/app/");
+        return;
+    }
+
+    await next();
+});
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "life-manager", utc = DateTimeOffset.UtcNow }));
-app.MapGet("/app", () => Results.Redirect("app/"));
 
 var auth = app.MapGroup("/api/auth");
 auth.MapPost("/register", async (RegisterRequest request, JsonStore store, PasswordService passwords, HttpContext http) =>
